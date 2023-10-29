@@ -4,13 +4,13 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-ruta_df_steam_games = 'C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps2/DATOS/output_steam_games_trans.parquet'
+ruta_df_steam_games = 'DATOS/output_steam_games_trans.parquet'
 df_steam_games = pd.read_parquet (ruta_df_steam_games)
 
-ruta_df_user_review_sentiment_analysis = 'C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps2/DATOS/australian_user_reviews_sentiment_analysis.parquet'
+ruta_df_user_review_sentiment_analysis = 'DATOS/australian_user_reviews_sentiment_analysis.parquet'
 df_user_reviews = pd.read_parquet(ruta_df_user_review_sentiment_analysis)
 
-ruta_data_items_resultante = 'C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps2/DATOS/users_items_final.parquet'
+ruta_data_items_resultante = 'DATOS/users_items_final.parquet'
 df_users_items = pd.read_parquet(ruta_data_items_resultante)
 
 df_users_items['item_id'] = df_users_items['item_id'].astype(int)
