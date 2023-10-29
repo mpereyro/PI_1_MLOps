@@ -1,96 +1,136 @@
-import pandas as pd
-import numpy as np
 from fastapi import FastAPI
+from typing import List
+import pandas as pd
 import time
+
+df_steam_games = pd.read_csv ('C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps/PI_MLOps-STEAM/steam_games.json/output_steam_games.csv')
+df_user_reviews = pd.read_csv('C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps/PI_MLOps-STEAM/user_reviews.json/australian_user_reviews_sentiment_analysis.csv')
+df_users_items = pd.read_csv('C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps/PI_MLOps-STEAM/users_items.json/users_items.csv')
 
 app = FastAPI()
 
-ruta_df_steam_games = 'C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps/PI_MLOps-STEAM/steam_games.json/output_steam_games_trans.parquet'
-df_steam_games = pd.read_parquet (ruta_df_steam_games)
+items_games = pd.merge(df_users_items, df_steam_games, how='inner', on=['item_id', 'title'])
+reviews_games = pd.merge(df_user_reviews, df_steam_games, how='inner', on='item_id')
 
-ruta_df_user_review_sentiment_analysis = 'C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps/PI_MLOps-STEAM/user_reviews.json/australian_user_reviews_sentiment_analysis.parquet'
-df_user_reviews = pd.read_parquet(ruta_df_user_review_sentiment_analysis)
+# Decorador para medir el tiempo de ejecución
+def calcular_tiempo_ejecucion(func):
+    def wrapper(*args, **kwargs):
+        inicio = time.time()
+        resultado = func(*args, **kwargs)
+        fin = time.time()
+        tiempo_transcurrido = fin - inicio
+        print(f"Tiempo de ejecución de '{func.__name__}': {tiempo_transcurrido} segundos")
+        return resultado
+    return wrapper
 
-ruta_data_items_resultante = 'C:/Users/Mauro/Desktop/HENRY/Proyecto_individual/PI_1_MLOps/PI_MLOps-STEAM/users_items.json/users_items_final.parquet'
-df_users_items = pd.read_parquet(ruta_data_items_resultante)
+@app.get("/PlayTimeGenre/{genero}")
+@calcular_tiempo_ejecucion  # Aplicamos el decorador
+def play_time_by_genre(genero: str):
+    # Filtra los juegos por género
+    games_in_genre = df_steam_games[df_steam_games['genres'].str.contains(genero, case=False, na=False)]
 
-df_users_items['item_id'] = df_users_items['item_id'].astype(int)
-df_user_reviews['item_id'] = df_user_reviews['item_id'].astype(int)
+    # Fusiona los datos de juegos y usuarios
+    merged_data = pd.merge(df_users_items, games_in_genre, left_on='item_id', right_on='id')
 
-# Fusionar información de juegos y usuarios basada en el ID del juego y el ID de usuario
-items_games = pd.merge(df_users_items, df_steam_games, left_on='item_id', right_on='id')
+    # Agrupa por juego y calcula el tiempo de juego promedio
+    result = merged_data.groupby('title')['playtime_forever'].mean().reset_index()
 
-reviews_games = pd.merge(df_user_reviews, df_steam_games, how='inner', left_on='item_id', right_on='id')
+    return result.to_dict(orient='records')
 
+@app.get("/user_for_genre/{genero}")
+@calcular_tiempo_ejecucion  # Aplicamos el decorador
+async def UserForGenre(genero: str):
+    # Paso 1: Filtrar los juegos del género especificado
+    juegos_genero = df_steam_games[df_steam_games['genres'].str.contains(genero, case=False, na=False, regex=False)]
 
-def PlayTimeGenre(genero: str) -> dict:
-    """
-    Devuelve el año con más horas jugadas para el género especificado.
+    if juegos_genero.empty:
+        return {"message": f"No se encontraron juegos del género '{genero}'."}
 
-    Args:
-        genero (str): Género del juego
-    Returns:
-        dict: Diccionario con el género y el año de lanzamiento con más horas jugadas
-    """
-    # Filtrar por género
-    df_util = items_games[items_games['genres'] == genero]
+    # Paso 2: Unir el DataFrame filtrado con df_users_items
+    df_filtrado_y_items = pd.merge(df_users_items, juegos_genero, left_on='item_id', right_on='id')
 
-    # Agrupar por el año de lanzamiento y sumar las horas jugadas
-    agrupado = df_util.groupby('release_year')['playtime_forever'].sum().sort_values(ascending=False)
+    # Paso 3: Calcular la acumulación de horas jugadas por usuario para el género dado
+    horas_acumuladas = df_filtrado_y_items.groupby('user_id')['playtime_forever'].sum().reset_index()
+    
+    # Paso 4: Encontrar el usuario que acumula más horas jugadas
+    usuario_max_horas = horas_acumuladas.loc[horas_acumuladas['playtime_forever'].idxmax()]
 
-    # Obtener el año con más horas jugadas
-    anio = agrupado.index[0]
+    # Paso 5: Calcular la acumulación de horas jugadas por año para ese usuario en el género especificado
+    usuario_id = usuario_max_horas['user_id']
+    usuario_juego_genero = df_filtrado_y_items[(df_filtrado_y_items['user_id'] == usuario_id) & (df_filtrado_y_items['genres'] == genero)]
+    usuario_acumulacion_anual = usuario_juego_genero.groupby(usuario_juego_genero['release_date'].dt.year)['playtime_forever'].sum().reset_index()
 
-    return {f'Año de lanzamiento con más horas jugadas para el género {genero}': int(anio)}
-
-def UserForGenre(genero: str) -> dict:
-    """
-    Devuelve el usuario que acumula más horas jugadas para el género dado
-    y una lista de la acumulación de horas jugadas por año.
-
-    Args:
-        genero (str): Género del juego
-    Returns:
-        dict: Diccionario con el usuario y la lista de horas jugadas por año
-    """
-    # Filtrar por género
-    df_util = items_games[items_games['genres'] == genero]
-
-    # Agrupar por usuario y año, sumando las horas jugadas
-    group = df_util.groupby(['user_id', 'release_year'])['playtime_forever'].sum().reset_index()
-
-    # Encontrar el usuario con más horas jugadas
-    user_max_playtime = group.groupby('user_id')['playtime_forever'].sum().idxmax()
-    user_max_hours = group.loc[group['user_id'] == user_max_playtime]
-
-    # Filtrar los años con horas acumuladas mayores a 0
-    filtered_hours_per_year = user_max_hours.set_index('release_year')['playtime_forever'].to_dict()
-    filtered_hours_per_year = {year: hours for year, hours in filtered_hours_per_year.items() if hours > 0}
-
+    # Paso 6: Devolver el resultado
     return {
-        'Usuario con más horas jugadas para el género': str(user_max_playtime),
-        'Acumulación de horas jugadas por año (mayores a 0)': filtered_hours_per_year
+        "usuario": usuario_id,
+        "acumulacion_anual_horas": usuario_acumulacion_anual.to_dict(orient="records")
     }
 
-def UsersRecommend(año: int) -> dict:
-    # Filtrar los juegos para el año especificado
-    juegos_año = reviews_games[reviews_games['release_year'] == año]
+@app.get("/users_recommend/{año}")
+@calcular_tiempo_ejecucion  # Aplicamos el decorador
+async def UsersRecommend(año: int):
+    # Paso 1: Filtrar las reseñas por el año especificado y donde recommend es verdadero
+    reseñas_filtradas = df_user_reviews[(df_user_reviews['posted'].dt.year == año) & (df_user_reviews['recommend'] == True)]
 
-    # Filtrar los juegos más recomendados con comentarios positivos o neutrales
-    juegos_recomendados = juegos_año[
-        (juegos_año['recommend'] == True) & 
-        (juegos_año['sentiment_analysis'].isin(['Positive', 'Neutral']))
-    ]
+    if reseñas_filtradas.empty:
+        return {"message": f"No se encontraron reseñas recomendadas para el año {año}."}
 
-    # Obtener el top 3 de juegos más recomendados
-    top_3_juegos = juegos_recomendados.nlargest(3, 'sentiment_analysis')
+    # Paso 2: Unir el DataFrame filtrado con df_steam_games
+    df = pd.merge(reseñas_filtradas, df_steam_games, left_on='item_id', right_on='id')
 
-    # Crear un diccionario con los top 3 juegos recomendados
-    top_juegos_dict = {
-        f"Top {i+1} Juego Recomendado": top_3_juegos.iloc[i]['title'] for i in range(3)
-    }
+    # Paso 3: Calcular la cantidad de reseñas positivas o neutrales para cada juego
+    reseñas_positivas_neutrales = df[(df['sentiment_analysis'] == 1) | (df['sentiment_analysis'] == 2)]
+    juegos_con_recomendaciones = reseñas_positivas_neutrales.groupby('app_name')['id_x'].count().reset_index()
 
-    return top_juegos_dict
+    # Paso 4: Clasificar los juegos en función de la cantidad de reseñas positivas o neutrales
+    juegos_ordenados = juegos_con_recomendaciones.sort_values(by='id_x', ascending=False)
 
+    # Paso 5: Seleccionar los 3 juegos principales y devolverlos
+    top_3_juegos = juegos_ordenados.head(3)
 
+    return top_3_juegos.to_dict(orient="records")
 
+@app.get("/users_not_recommend/{año}")
+@calcular_tiempo_ejecucion  # Aplicamos el decorador
+async def UsersNotRecommend(año: int):
+    # Paso 1: Filtrar las reseñas por el año especificado y donde recommend es falso
+    reseñas_filtradas = df_user_reviews[(df_user_reviews['posted'].dt.year == año) & (df_user_reviews['recommend'] == False)]
+
+    if reseñas_filtradas.empty:
+        return {"message": f"No se encontraron reseñas no recomendadas para el año {año}."}
+
+    # Paso 2: Unir el DataFrame filtrado con df_steam_games
+    df = pd.merge(reseñas_filtradas, df_steam_games, left_on='item_id', right_on='id')
+
+    # Paso 3: Filtrar las reseñas negativas
+    reseñas_negativas = df[df['sentiment_analysis'] == 0]
+
+    if reseñas_negativas.empty:
+        return {"message": f"No se encontraron reseñas negativas para el año {año}."}
+
+    # Paso 4: Calcular la cantidad de reseñas negativas para cada juego
+    juegos_con_reseñas_negativas = reseñas_negativas.groupby('app_name')['id_x'].count().reset_index()
+
+    # Paso 5: Clasificar los juegos en función de la cantidad de reseñas negativas
+    juegos_ordenados = juegos_con_reseñas_negativas.sort_values(by='id_x', ascending=False)
+
+    # Paso 6: Seleccionar los 3 juegos principales y devolverlos
+    top_3_juegos_no_recomendados = juegos_ordenados.head(3)
+
+    return top_3_juegos_no_recomendados.to_dict(orient="records")
+
+@app.get("/sentiment_analysis/{año}")
+@calcular_tiempo_ejecucion  # Aplicamos el decorador
+async def sentiment_analysis(año: int):
+    # Paso 1: Filtrar las reseñas por el año especificado
+    reseñas_por_año = df_user_reviews[df_user_reviews['posted'].dt.year == año]
+
+    if reseñas_por_año.empty:
+        return {"message": f"No se encontraron reseñas para el año {año}."}
+
+    # Paso 2: Contar la cantidad de registros de reseñas categorizados con un análisis de sentimiento
+    cantidad_sentimiento = reseñas_por_año['sentiment_analysis'].value_counts().reset_index()
+    cantidad_sentimiento.columns = ['sentiment', 'count']
+
+    # Paso 3: Devolver la lista de categorías de sentimiento y su cantidad
+    return cantidad_sentimiento.to_dict(orient="records")
