@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 app = FastAPI()
 
-items_games_filtered = pd.read_parquet ('DATOS/items_games_filtered.parquet')
+items_games_filtrado = pd.read_parquet ('DATOS/summary_df.parquet')
 
 def PlayTimeGenre(genero: str) -> dict:
     """
@@ -15,16 +15,10 @@ def PlayTimeGenre(genero: str) -> dict:
     Returns:
         dict: Diccionario con el género y el año de lanzamiento con más horas jugadas
     """
-    # Filtrar por género
-    df_util = items_games_filtered[items_games_filtered['genres'] == genero]
+    # Filtrar el DataFrame para el género específico
+    df_genre = items_games_filtrado[items_games_filtrado['Género'] == genero]
 
-    if df_util.empty:
-        return f"No hay datos para el género {genero}"
+    # Encontrar el año con más horas jugadas para el género dado
+    max_hours_year = df_genre.loc[df_genre['Total_Horas_Jugadas'].idxmax()]['Año_Max_Horas_Jugadas']
 
-    # Agrupar por el año de lanzamiento y sumar las horas jugadas
-    agrupado = df_util.groupby('release_year')['playtime_forever'].sum().sort_values(ascending=False)
-
-    # Obtener el año con más horas jugadas
-    anio = agrupado.index[0]
-
-    return {f'Año de lanzamiento con más horas jugadas para el género {genero}': int(anio)}
+    return {f'Año de lanzamiento con más horas jugadas para el género {genero}': int(max_hours_year)}
