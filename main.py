@@ -6,11 +6,6 @@ app = FastAPI()
 # Cargar el archivo Parquet
 items_games_filtrado = pd.read_parquet('DATOS/summary_df.parquet')
 
-# Ruta raíz
-@app.get("/")
-async def read_root():
-    return {"message": "¡La aplicación está funcionando!"}
-
 # Ruta para la función PlayTimeGenre
 @app.get("/PlayTimeGenre/{genero}")
 async def get_play_time_genre(genero: str):
