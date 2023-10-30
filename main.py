@@ -1,12 +1,19 @@
 import pandas as pd
 from fastapi import FastAPI
 
-
 app = FastAPI()
 
-items_games_filtrado = pd.read_parquet ('DATOS/summary_df.parquet')
+# Cargar el archivo Parquet
+items_games_filtrado = pd.read_parquet('DATOS/summary_df.parquet')
 
-def PlayTimeGenre(genero: str) -> dict:
+# Ruta raíz
+@app.get("/")
+async def read_root():
+    return {"message": "¡La aplicación está funcionando!"}
+
+# Ruta para la función PlayTimeGenre
+@app.get("/PlayTimeGenre/{genero}")
+async def get_play_time_genre(genero: str):
     """
     Devuelve el año con más horas jugadas para el género especificado.
 
